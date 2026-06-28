@@ -1,0 +1,13 @@
+Question 1 DS domain creation completed successfully.
+Rows: 850
+Missing RFSTDTC after join: 0
+Missing DSSTDTC: 0
+Missing DSSTDY: 52
+
+Derivation notes:
+1. USUBJID is built to match the DM merge key.
+2. RFSTDTC is joined from DM using USUBJID.
+3. DSSTDTC is derived from IT.DSSTDAT.
+4. DSSTDY is derived from DSSTDTC relative to RFSTDTC.
+5. If both dates exist and DSSTDTC is on/after RFSTDTC, DSSTDY = DSSTDTC - RFSTDTC + 1.
+6. If DSSTDTC is before RFSTDTC, DSSTDY = DSSTDTC - RFSTDTC.
