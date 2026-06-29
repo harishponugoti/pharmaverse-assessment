@@ -61,3 +61,48 @@ if (utils::packageVersion("gtsummary") < "2.0.0") {
 }
 
 cat("   Packages loaded successfully.\n\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 2: Load ADAE and ADSL.
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 2: Loading ADAE and ADSL datasets...\n")
+
+adae <- pharmaverseadam::adae
+adsl <- pharmaverseadam::adsl
+
+cat("   ADAE dimensions :", paste(dim(adae), collapse = " x "), "\n")
+cat("   ADSL dimensions :", paste(dim(adsl), collapse = " x "), "\n\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 3: Define the denominator population (Big-N).
+#   tbl_hierarchical() uses the `denominator` dataset to compute Big-N per
+#   treatment arm (one row per subject) -- this is what drives the correct
+#   "Placebo, N=86 / Dose, N=72 / Dose, N=96" style header in the screenshot,
+#   and ensures subjects with ZERO AEs still count toward the denominator.
+#   We restrict to the safety population (SAFFL == "Y") if that flag exists.
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 3: Building denominator (Big-N) population from ADSL...\n")
+
+adsl_safety <- if ("SAFFL" %in% names(adsl)) {
+  dplyr::filter(adsl, SAFFL == "Y")
+} else {
+  adsl
+}
+
+cat("   Big-N per treatment arm:\n")
+print(dplyr::count(adsl_safety, ACTARM, name = "BIGN"))
+cat("\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 4: Filter ADAE to Treatment-Emergent AEs only (TRTEMFL == "Y"),
+#   as required by the task.
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 4: Filtering ADAE to Treatment-Emergent AEs (TRTEMFL == 'Y')...\n")
+
+adae_teae <- dplyr::filter(adae, TRTEMFL == "Y")
+
+cat("   ADAE records before filter:", nrow(adae), "\n")
+cat("   ADAE records after  filter:", nrow(adae_teae), "(TEAE only)\n\n")
