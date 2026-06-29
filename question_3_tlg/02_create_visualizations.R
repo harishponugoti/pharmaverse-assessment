@@ -64,3 +64,4 @@ adsl <- pharmaverseadam::adsl
 
 cat("   ADAE dimensions :", paste(dim(adae), collapse = " x "), "\n")
 cat("   ADSL dimensions :", paste(dim(adsl), collapse = " x "), "\n\n")
+
