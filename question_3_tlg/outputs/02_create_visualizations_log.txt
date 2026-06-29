@@ -1,0 +1,109 @@
+================================================================
+02_create_visualizations.R - Execution Log
+Run started : 2026-06-29 11:37:20.304028 
+================================================================
+
+>> STEP 1: Loading required packages...
+   Packages loaded successfully.
+
+>> STEP 2: Loading ADAE and ADSL datasets...
+   ADAE dimensions : 1191 x 107 
+   ADSL dimensions : 306 x 55 
+
+>> STEP 3: Building safety population and TEAE-filtered AE dataset...
+   Safety population (Big-N), all arms combined: 254 subjects
+   TEAE records: 1122 
+
+>> PLOT 1: Building 'AE severity distribution by treatment' (stacked bar)...
+   Plot 1 input rows (TEAE records with non-missing AESEV): 1122 
+   AESEV levels found: SEVERE, MODERATE, MILD 
+   ACTARM levels found: Placebo, Xanomeline High Dose, Xanomeline Low Dose 
+
+   ggplot object for Plot 1 built successfully.
+
+>> Saving Plot 1 PNG...
+   Saved: C:\Users\user\Desktop\pharmaverse-assessment\question_3_tlg\outputs\ae_severity_distribution.png 
+
+>> PLOT 2: Building 'Top 10 Most Frequent Adverse Events' (95% CI plot)...
+   Total distinct AETERM values: 230 
+   Top 10 AE terms selected:
+# A tibble: 10 × 2
+   AETERM                      n_subjects
+   <chr>                            <int>
+ 1 PRURITUS                            54
+ 2 APPLICATION SITE PRURITUS           50
+ 3 ERYTHEMA                            36
+ 4 APPLICATION SITE ERYTHEMA           30
+ 5 RASH                                26
+ 6 APPLICATION SITE DERMATITIS         21
+ 7 APPLICATION SITE IRRITATION         21
+ 8 DIZZINESS                           21
+ 9 DIARRHOEA                           17
+10 SINUS BRADYCARDIA                   17
+
+>> Computing 95% Clopper-Pearson confidence intervals...
+   Final Top-10 table with 95% CIs:
+                        AETERM n_subjects       pct    ci_low  ci_high
+1                     PRURITUS         54 21.259843 16.393322 26.81059
+2    APPLICATION SITE PRURITUS         50 19.685039 14.977936 25.11484
+3                     ERYTHEMA         36 14.173228 10.128238 19.07801
+4    APPLICATION SITE ERYTHEMA         30 11.811024  8.112433 16.43005
+5                         RASH         26 10.236220  6.796295 14.63808
+6  APPLICATION SITE DERMATITIS         21  8.267717  5.190642 12.36045
+7  APPLICATION SITE IRRITATION         21  8.267717  5.190642 12.36045
+8                    DIZZINESS         21  8.267717  5.190642 12.36045
+9                    DIARRHOEA         17  6.692913  3.946897 10.49991
+10           SINUS BRADYCARDIA         17  6.692913  3.946897 10.49991
+
+   ggplot object for Plot 2 built successfully.
+
+>> Saving Plot 2 PNG...
+   Saved: C:\Users\user\Desktop\pharmaverse-assessment\question_3_tlg\outputs\top10_ae_frequency_ci.png 
+
+>> STEP 6: Sanity checks...
+   Plot 1 - severity levels plotted : SEVERE, MODERATE, MILD 
+   Plot 1 - treatment arms plotted  : Placebo, Xanomeline High Dose, Xanomeline Low Dose 
+   Plot 2 - denominator (n)         : 254 
+   Plot 2 - AE terms plotted        : PRURITUS; APPLICATION SITE PRURITUS; ERYTHEMA; APPLICATION SITE ERYTHEMA; RASH; APPLICATION SITE DERMATITIS; APPLICATION SITE IRRITATION; DIZZINESS; DIARRHOEA; SINUS BRADYCARDIA 
+
+================================================================
+Run completed : 2026-06-29 11:37:21.561097 
+STATUS: SUCCESS
+Outputs written:
+  - outputs/ae_severity_distribution.png
+  - outputs/top10_ae_frequency_ci.png
+  - outputs/02_create_visualizations_log.txt (this file)
+================================================================
+ARDIA         17  6.692913  3.946897 10.49991
+
+   ggplot object for Plot 2 built successfully.
+
+>> Saving Plot 2 PNG...
+   Saved: C:\Users\user\Desktop\pharmaverse-assessment\question_3_tlg\outputs\top10_ae_frequency_ci.png 
+
+>> STEP 6: Sanity checks...
+   Plot 1 - severity levels plotted : SEVERE, MODERATE, MILD 
+   Plot 1 - treatment arms plotted  : Placebo, Xanomeline High Dose, Xanomeline Low Dose 
+   Plot 2 - denominator (n)         : 254 
+   Plot 2 - AE terms plotted        : PRURITUS; APPLICATION SITE PRURITUS; ERYTHEMA; APPLICATION SITE ERYTHEMA; RASH; APPLICATION SITE DERMATITIS; APPLICATION SITE IRRITATION; DIZZINESS; DIARRHOEA; SINUS BRADYCARDIA 
+
+================================================================
+Run completed : 2026-06-29 11:37:21.561097 
+STATUS: SUCCESS
+Outputs written:
+  - outputs/ae_severity_distribution.png
+  - outputs/top10_ae_frequency_ci.png
+  - outputs/02_create_visualizations_log.txt (this file)
+================================================================
+tted  : Placebo, Xanomeline High Dose, Xanomeline Low Dose 
+   Plot 2 - denominator (n)         : 254 
+   Plot 2 - AE terms plotted        : PRURITUS; APPLICATION SITE PRURITUS; ERYTHEMA; APPLICATION SITE ERYTHEMA; RASH; APPLICATION SITE DERMATITIS; APPLICATION SITE IRRITATION; DIZZINESS; DIARRHOEA; SINUS BRADYCARDIA 
+
+================================================================
+Run completed : 2026-06-29 11:37:21.561097 
+STATUS: SUCCESS
+Outputs written:
+  - outputs/ae_severity_distribution.png
+  - outputs/top10_ae_frequency_ci.png
+  - outputs/02_create_visualizations_log.txt (this file)
+================================================================

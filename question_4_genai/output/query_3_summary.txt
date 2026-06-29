@@ -1,0 +1,4 @@
+Query 3: List subjects with Cardiac events.
+Parsed JSON: {'target_column': 'AESOC', 'filter_value': 'CARDIAC'}
+Unique subjects: 0
+USUBJIDs: None

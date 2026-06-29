@@ -1,0 +1,4 @@
+Query 2: Show subjects with Headache.
+Parsed JSON: {'target_column': 'AETERM', 'filter_value': 'HEADACHE'}
+Unique subjects: 2
+USUBJIDs: 01-001, 01-006
