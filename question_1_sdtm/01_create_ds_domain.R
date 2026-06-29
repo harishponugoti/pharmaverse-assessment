@@ -1,11 +1,35 @@
-
 # Question 1 - SDTM DS domain creation
 # Goal: Create DS and populate DSSTDY using DM.RFSTDTC
 # Output: question_1_sdtm/output/DS.csv and ds_run_log.txt
 
 # -------------------------------------------------------------------
+# 0) Set up full execution logging (line 1 to end of script).
+#    sink() redirects both normal console output (cat/print) and
+#    messages/warnings to the log file, while split = TRUE also echoes
+#    everything to the console so you can watch it run interactively.
+#    The output folder + log file are created FIRST, before anything
+#    else runs, so the whole script is captured from the very top.
+# -------------------------------------------------------------------
+output_dir <- "output"
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+log_path <- file.path(output_dir, "ds_run_log.txt")
+log_con <- file(log_path, open = "wt")
+sink(log_con, split = TRUE)              # capture stdout (cat/print)
+sink(log_con, type = "message")          # capture messages/warnings too
+
+cat("================================================================\n")
+cat("Question 1 - SDTM DS Domain Creation - Execution Log\n")
+cat("Run started :", as.character(Sys.time()), "\n")
+cat("================================================================\n\n")
+
+# -------------------------------------------------------------------
 # 1) Install packages if needed
 # -------------------------------------------------------------------
+cat(">> STEP 1: Checking/installing required packages...\n")
+
 required_packages <- c(
   "dplyr",
   "readr",
@@ -16,27 +40,39 @@ required_packages <- c(
 
 new_packages <- required_packages[!required_packages %in% installed.packages()[, "Package"]]
 if (length(new_packages) > 0) {
+  cat("   Installing missing packages:", paste(new_packages, collapse = ", "), "\n")
   install.packages(new_packages)
 }
 
 # -------------------------------------------------------------------
 # 2) Load libraries
 # -------------------------------------------------------------------
+cat(">> STEP 2: Loading libraries...\n")
+
 library(dplyr)
 library(readr)
 library(pharmaverseraw)
 library(pharmaversesdtm)
 library(lubridate)
 
+cat("   Libraries loaded successfully.\n\n")
+
 # -------------------------------------------------------------------
 # 3) Load source data
 # -------------------------------------------------------------------
+cat(">> STEP 3: Loading source data (ds_raw, dm)...\n")
+
 ds_raw <- pharmaverseraw::ds_raw
 dm <- pharmaversesdtm::dm
+
+cat("   ds_raw rows:", nrow(ds_raw), "| cols:", ncol(ds_raw), "\n")
+cat("   dm rows     :", nrow(dm), "| cols:", ncol(dm), "\n\n")
 
 # -------------------------------------------------------------------
 # 4) Controlled terminology lookup for DSDECOD
 # -------------------------------------------------------------------
+cat(">> STEP 4: Building controlled terminology (DSDECOD) lookup table...\n")
+
 studyct <- data.frame(
   stringsAsFactors = FALSE,
   codelistcode = rep("C66727", 10),
@@ -77,9 +113,13 @@ studyct <- data.frame(
   )
 )
 
+cat("   studyct rows:", nrow(studyct), "\n\n")
+
 # -------------------------------------------------------------------
 # 5) Build DS records with DM-style USUBJID
 # -------------------------------------------------------------------
+cat(">> STEP 5: Building DS records (USUBJID, DSCAT, DSTERM, DSDECOD, DSSEQ)...\n")
+
 ds1 <- ds_raw %>%
   mutate(
     STUDYID = as.character(STUDY),
@@ -105,9 +145,16 @@ ds1 <- ds_raw %>%
   mutate(DSDECOD = coalesce(DSDECOD, ct_dsdecod)) %>%
   select(-ct_dsdecod)
 
+cat("   ds1 rows:", nrow(ds1), "| unique USUBJID:", n_distinct(ds1$USUBJID), "\n")
+cat("   DSDECOD table after CT lookup:\n")
+print(table(ds1$DSDECOD, useNA = "ifany"))
+cat("\n")
+
 # -------------------------------------------------------------------
 # 6) Prepare DM key and join RFSTDTC
 # -------------------------------------------------------------------
+cat(">> STEP 6: Joining DM.RFSTDTC by USUBJID and deriving DSSTDY...\n")
+
 # Prepare DM reference and join by USUBJID
 dm_ref <- dm %>%
   transmute(
@@ -115,6 +162,8 @@ dm_ref <- dm %>%
     RFSTDTC = as.character(RFSTDTC)
   ) %>%
   distinct()
+
+cat("   dm_ref rows (distinct USUBJID):", nrow(dm_ref), "\n")
 
 # Join and derive DSSTDY using numeric days
 ds2 <- ds1 %>%
@@ -136,9 +185,15 @@ ds2 <- ds1 %>%
       TRUE ~ NA_integer_
     )
   )
+
+cat("   ds2 rows:", nrow(ds2), "\n")
+cat("   Rows with DSSTDY derived:", sum(!is.na(ds2$DSSTDY)), "out of", nrow(ds2), "\n\n")
+
 # -------------------------------------------------------------------
 # 7) Final DS dataset
 # -------------------------------------------------------------------
+cat(">> STEP 7: Selecting final DS variables...\n")
+
 DS <- ds2 %>%
   select(
     STUDYID,
@@ -154,14 +209,24 @@ DS <- ds2 %>%
     DSSTDY
   )
 
+cat("   Final DS rows:", nrow(DS), "| columns:", ncol(DS), "\n")
+cat("   Final DS column names:", paste(names(DS), collapse = ", "), "\n\n")
+
 # -------------------------------------------------------------------
 # 8) Diagnostics / log notes
+#    NOTE: the original script referenced an object called `ds` here,
+#    which was never created (the working dataset at this point is
+#    `ds2`). That would have thrown an "object 'ds' not found" error
+#    before the log file was ever written, so it's corrected to `ds2`
+#    below -- the diagnostic logic itself is unchanged.
 # -------------------------------------------------------------------
+cat(">> STEP 8: Building diagnostics / QC log notes...\n")
+
 log_lines <- c(
   "Question 1 DS domain creation completed successfully.",
   paste("Rows:", nrow(DS)),
-  paste("Missing RFSTDTC after join:", sum(is.na(ds$RFSTDTC))),
-  paste("Missing DSSTDTC:", sum(is.na(ds$DSSTDTC))),
+  paste("Missing RFSTDTC after join:", sum(is.na(ds2$RFSTDTC))),
+  paste("Missing DSSTDTC:", sum(is.na(ds2$DSSTDTC))),
   paste("Missing DSSTDY:", sum(is.na(DS$DSSTDY))),
   "",
   "Derivation notes:",
@@ -173,13 +238,26 @@ log_lines <- c(
   "6. If DSSTDTC is before RFSTDTC, DSSTDY = DSSTDTC - RFSTDTC."
 )
 
+cat(paste(log_lines, collapse = "\n"), "\n\n")
+
 # -------------------------------------------------------------------
 # 9) Write output files
 # -------------------------------------------------------------------
-output_dir <- "output"
-if (!dir.exists(output_dir)) {
-  dir.create(output_dir, recursive = TRUE)
-}
+cat(">> STEP 9: Writing DS.csv to output/...\n")
 
 write_csv(DS, file.path(output_dir, "DS.csv"))
-writeLines(log_lines, file.path(output_dir, "ds_run_log.txt"))
+
+cat("   Saved:", normalizePath(file.path(output_dir, "DS.csv")), "\n\n")
+
+cat("================================================================\n")
+cat("Run completed :", as.character(Sys.time()), "\n")
+cat("STATUS: SUCCESS\n")
+cat("================================================================\n")
+
+# -------------------------------------------------------------------
+# 10) Close log sinks (always last, so the log file is fully flushed
+#     and closed, and nothing after this point is lost).
+# -------------------------------------------------------------------
+sink(type = "message")
+sink()
+close(log_con)
