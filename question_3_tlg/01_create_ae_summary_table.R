@@ -106,3 +106,83 @@ adae_teae <- dplyr::filter(adae, TRTEMFL == "Y")
 
 cat("   ADAE records before filter:", nrow(adae), "\n")
 cat("   ADAE records after  filter:", nrow(adae_teae), "(TEAE only)\n\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 5: Build the hierarchical TEAE summary table.
+#
+#   tbl_hierarchical() is purpose-built for exactly this kind of AE table:
+#     - variables = c(AESOC, AETERM)  -> nested rows: SOC headers with PT
+#       rows indented beneath them (matches the screenshot layout)
+#     - by = ACTARM                   -> one column per treatment group
+#     - id = USUBJID                  -> de-duplicates so a subject with
+#                                        multiple occurrences of the same
+#                                        AE is only counted ONCE (incidence,
+#                                        not occurrence count)
+#     - denominator = adsl_safety     -> correct Big-N per arm for % calc
+#     - statistic = "{n} ({p}%)"      -> cell value = count and percentage
+#     - overall_row = TRUE            -> adds a top "Any TEAE" summary row,
+#                                        exactly like "Treatment Emergent
+#                                        AEs" in the reference screenshot
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 5: Building hierarchical AE table with tbl_hierarchical()...\n")
+
+ae_tbl <- tbl_hierarchical(
+  data        = adae_teae,
+  variables   = c(AESOC, AETERM),
+  by          = ACTARM,
+  id          = USUBJID,
+  denominator = adsl_safety,
+  statistic   = everything() ~ "{n} ({p}%)",
+  overall_row = TRUE,
+  label       = list(
+    AESOC = "Primary System Organ Class",
+    AETERM = "Reported Term for the Adverse Event",
+    ..ard_hierarchical_overall.. = "Treatment Emergent AEs"
+  )
+)
+
+cat("   tbl_hierarchical() object built.\n\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 6: (Total column intentionally NOT added per latest requirement --
+#   table shows only the by-arm (ACTARM) columns, no overall/Total column.)
+# ------------------------------------------------------------------------- #
+
+# ------------------------------------------------------------------------- #
+# STEP 7: Sort by descending frequency, as required by the task.
+#   sort_hierarchical() sorts BOTH levels of the hierarchy (AESOC, then
+#   AETERM within each AESOC) by descending overall frequency by default.
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 7: Sorting rows by descending frequency (sort_hierarchical())...\n")
+
+ae_tbl <- ae_tbl %>%
+  sort_hierarchical(sort = everything() ~ "descending")
+
+cat("   Table sorted: most frequent SOC/AE terms appear first.\n\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 8: Cosmetic / regulatory-style formatting (bold labels, caption,
+#   header styling) to match the FDA Table 10 look in the screenshot.
+#
+#   INDENTATION: tbl_hierarchical() already indents AETERM (PT) rows one
+#   level beneath their parent AESOC row by default (this is built into
+#   the table_styling "indent" attribute it sets for nested variables).
+#   The line below makes that explicit/guaranteed at exactly one level of
+#   indent, in case a theme or prior modify_*() call has changed it.
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 8: Applying final formatting (labels, caption, bold, indent)...\n")
+
+ae_tbl <- ae_tbl %>%
+  modify_table_styling(
+    columns = label,
+    rows = variable == "AETERM",
+    text_format = "indent"     # ensures one level of indent for PT rows
+  ) %>%
+  modify_caption("**Table 10. Treatment-Emergent Adverse Events by System Organ Class and Preferred Term**") %>%
+  bold_labels() %>%
+  modify_footnote(everything() ~ NA)   # remove default gtsummary footnotes
+
+cat("   Formatting applied (PT rows indented one level beneath their SOC).\n\n")
