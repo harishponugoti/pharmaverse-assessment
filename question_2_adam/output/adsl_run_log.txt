@@ -1,3 +1,76 @@
+================================================================
+Question 2 - ADSL Creation - Execution Log
+Run started : 2026-06-29 16:06:56.123627 
+================================================================
+
+>> Loading required packages...
+G3;
+Attaching package: ‘dplyr’
+
+gG3;The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+gG3;The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+gG3;
+Attaching package: ‘lubridate’
+
+gG3;The following objects are masked from ‘package:base’:
+
+    date, intersect, setdiff, union
+
+g   Packages loaded successfully.
+
+>> Reading source SDTM datasets (DM, EX, DS, AE, VS)...
+   DM rows: 306 | EX rows: 591 | DS rows: 850 | AE rows: 1191 | VS rows: 29643 
+
+>> Building base ADSL from DM (dropping DOMAIN)...
+   Base ADSL rows: 306 | cols: 25 
+
+>> Deriving AGEGR1, AGEGR9, AGEGR9N, REGION1...
+   AGEGR1 table:
+
+  >64 18-64 
+  264    42 
+   AGEGR9 table:
+
+    >50 18 - 50 
+    305       1 
+
+>> Preparing exposure (EX) data: valid dose flag + imputed datetimes...
+   EX rows with valid dose: 591 out of 591 
+
+>> Deriving treatment start/end datetime, TRT01P/A, ITTFL, SAFFL...
+   ITTFL table:
+
+  Y 
+306 
+   SAFFL table:
+
+  N   Y 
+ 52 254 
+
+>> Deriving treatment duration (TRTDURD)...
+   TRTDURD summary:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA's 
+    1.0    44.0   132.0   115.2   183.0   212.0      54 
+
+>> Deriving last disposition date (EOSDT), RANDDT, AP01SDT/EDT...
+   Subjects with EOSDT derived: 306 
+
+>> Deriving last known alive date (LSTAVLDT) from VS, AE, DS, EX...
+   Subjects with LSTAVLDT derived: 306 out of 306 
+
+>> Assembling final ADSL column order...
+   Final ADSL rows: 306 | columns: 48 
+
+>> Saving ADSL dataset to output/adsl.csv...
+   Saved: C:\Users\user\Desktop\pharmaverse-assessment\question_2_adam\output\adsl.csv 
+
+>> Final QC summary...
 Question 2 ADSL dataset creation completed successfully.
 Rows: 306
 Columns: 48
@@ -6,4 +79,9 @@ Missing AGEGR9: 0
 Missing RANDDT: 52
 Missing TRTSDTM: 52
 Missing ITTFL: 0
-Missing LSTAVLDT: 0
+Missing LSTAVLDT: 0 
+
+================================================================
+Run completed : 2026-06-29 16:06:59.66465 
+STATUS: SUCCESS
+================================================================
