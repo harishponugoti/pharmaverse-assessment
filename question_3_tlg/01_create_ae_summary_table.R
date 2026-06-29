@@ -31,6 +31,7 @@ cat("AE_Table10_gtsummary.R - Execution Log\n")
 cat("Run started :", as.character(Sys.time()), "\n")
 cat("================================================================\n\n")
 
+
 # ------------------------------------------------------------------------- #
 # STEP 1: Load required packages.
 #   - pharmaverseadam : source of adae / adsl test data
