@@ -148,3 +148,119 @@ ggplot2::ggsave(
 )
 
 cat("   Saved:", normalizePath("outputs/ae_severity_distribution.png"), "\n\n")
+
+
+################################################################################
+# PLOT 2: Top 10 most frequent AEs, with 95% Clopper-Pearson CIs
+#   - y-axis : AETERM (top 10 most frequent terms, most frequent at top)
+#   - x-axis : Percentage of patients (incidence rate, %), with 95% CI
+#   - Denominator (n) : total subjects in the safety population
+#   - Each subject is counted ONCE per AETERM (incidence, not occurrences)
+################################################################################
+
+cat(">> PLOT 2: Building 'Top 10 Most Frequent Adverse Events' (95% CI plot)...\n")
+
+# --- 5a. Count UNIQUE SUBJECTS per AETERM (incidence, not event count) ----
+ae_subject_counts <- adae_teae %>%
+  dplyr::distinct(USUBJID, AETERM) %>%             # one row per subject per term
+  dplyr::count(AETERM, name = "n_subjects") %>%
+  dplyr::arrange(dplyr::desc(n_subjects))
+
+cat("   Total distinct AETERM values:", nrow(ae_subject_counts), "\n")
+
+# --- 5b. Keep only the TOP 10 most frequent terms --------------------------
+top10_ae <- ae_subject_counts %>%
+  dplyr::slice_head(n = 10)
+
+cat("   Top 10 AE terms selected:\n")
+print(top10_ae)
+cat("\n")
+
+# --- 5c. Compute 95% Clopper-Pearson exact CI for each term's incidence ----
+#   stats::binom.test() uses the Clopper-Pearson exact method by default,
+#   so no extra package (e.g. Hmisc) is required.
+cat(">> Computing 95% Clopper-Pearson confidence intervals...\n")
+
+# For each of the top 10 terms: x = subjects with that AE, n = safety
+# population size. stats::binom.test() defaults to the exact
+# Clopper-Pearson method, so no extra package is needed.
+ci_list <- lapply(seq_len(nrow(top10_ae)), function(i) {
+  bt <- stats::binom.test(
+    x = top10_ae$n_subjects[i],
+    n = n_subjects,
+    conf.level = 0.95
+  )
+  data.frame(
+    pct    = 100 * top10_ae$n_subjects[i] / n_subjects,
+    ci_low  = 100 * bt$conf.int[1],
+    ci_high = 100 * bt$conf.int[2]
+  )
+})
+ci_df <- do.call(rbind, ci_list)
+
+top10_ae <- cbind(top10_ae, ci_df) %>%
+  dplyr::select(AETERM, n_subjects, pct, ci_low, ci_high) %>%
+  dplyr::arrange(dplyr::desc(n_subjects)) %>%
+  dplyr::mutate(AETERM = forcats::fct_reorder(AETERM, n_subjects))  # plot order: most frequent at top
+
+cat("   Final Top-10 table with 95% CIs:\n")
+print(top10_ae)
+cat("\n")
+
+# --- 5d. Build the ggplot (dot + error-bar / forest-style plot) -----------
+plot2 <- ggplot2::ggplot(top10_ae, ggplot2::aes(x = pct, y = AETERM)) +
+  ggplot2::geom_errorbarh(ggplot2::aes(xmin = ci_low, xmax = ci_high), height = 0.15) +
+  ggplot2::geom_point(size = 3) +
+  ggplot2::scale_x_continuous(labels = function(x) paste0(x, "%")) +
+  ggplot2::labs(
+    title    = "Top 10 Most Frequent Adverse Events",
+    subtitle = paste0("n = ", n_subjects, " subjects; 95% Clopper-Pearson CIs"),
+    x        = "Percentage of Patients (%)",
+    y        = NULL
+  ) +
+  ggplot2::theme_gray(base_size = 12) +
+  ggplot2::theme(
+    plot.title    = ggplot2::element_text(face = "bold", hjust = 0),
+    plot.subtitle = ggplot2::element_text(color = "grey30"),
+    panel.grid.minor = ggplot2::element_blank()
+  )
+
+cat("   ggplot object for Plot 2 built successfully.\n\n")
+
+# --- 5e. Save Plot 2 as PNG -------------------------------------------------
+cat(">> Saving Plot 2 PNG...\n")
+
+ggplot2::ggsave(
+  filename = "outputs/top10_ae_frequency_ci.png",
+  plot     = plot2,
+  width    = 8, height = 5.5, dpi = 300, units = "in"
+)
+
+cat("   Saved:", normalizePath("outputs/top10_ae_frequency_ci.png"), "\n\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 6: Final sanity checks / summary printed to the log.
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 6: Sanity checks...\n")
+cat("   Plot 1 - severity levels plotted :", paste(levels(plot1_data$AESEV), collapse = ", "), "\n")
+cat("   Plot 1 - treatment arms plotted  :", paste(levels(plot1_data$ACTARM), collapse = ", "), "\n")
+cat("   Plot 2 - denominator (n)         :", n_subjects, "\n")
+cat("   Plot 2 - AE terms plotted        :", paste(as.character(top10_ae$AETERM), collapse = "; "), "\n\n")
+
+cat("================================================================\n")
+cat("Run completed :", as.character(Sys.time()), "\n")
+cat("STATUS: SUCCESS\n")
+cat("Outputs written:\n")
+cat("  - outputs/ae_severity_distribution.png\n")
+cat("  - outputs/top10_ae_frequency_ci.png\n")
+cat("  - outputs/02_create_visualizations_log.txt (this file)\n")
+cat("================================================================\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 7: Close log sinks (always last).
+# ------------------------------------------------------------------------- #
+
+sink(type = "message")
+sink()
+close(log_con)
