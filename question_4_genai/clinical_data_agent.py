@@ -14,20 +14,23 @@ except Exception:
     ChatOpenAI = None
 
 
-# List of possible online sources for the AE dataset.
-# The code tries these in order and uses the first one that works.
+# Online locations to try for the AE dataset.
+# The first valid file found will be loaded.
+# This version points to the CDISC pilot project ae.xpt file first.
 DATASET_URLS = [
+    "https://github.com/cdisc-org/sdtm-adam-pilot-project/raw/master/updated-pilot-submission-package/900172/m5/datasets/cdiscpilot01/tabulations/sdtm/ae.xpt",
+    "https://raw.githubusercontent.com/cdisc-org/sdtm-adam-pilot-project/master/updated-pilot-submission-package/900172/m5/datasets/cdiscpilot01/tabulations/sdtm/ae.xpt",
+    "https://raw.githubusercontent.com/cdisc-org/sdtm-adam-pilot-project/master/updated-pilot-submission-package/900172/m5/datasets/cdiscpilot01/tabulations/sdtm/AE.XPT",
     "https://pharmaverse.r-universe.dev/datasets/pharmaversesdtm/ae.csv",
     "https://pharmaverse.r-universe.dev/datasets/pharmaversesdtm::ae.csv",
     "https://pharmaverse.r-universe.dev/pharmaversesdtm/data/ae.csv",
     "https://pharmaverse.github.io/pharmaversesdtm/reference/ae.csv",
 ]
 
-# Folder where query outputs and summaries will be written.
+# Local output folder for generated query files.
 OUTPUT_DIR = Path("output")
 
-# Prompt text that tells the LLM what the dataset contains and how to map
-# a natural-language question to the correct AE column.
+# Prompt text that teaches the LLM how to map user questions to AE variables.
 SCHEMA_TEXT = """
 You are a clinical trial adverse events data assistant.
 
@@ -50,34 +53,31 @@ Return only valid structured output with:
 """
 
 
-# Structured output model expected from the LLM.
-# The agent uses these two fields to decide which column to filter
-# and what value to search for.
+# Structured response expected from the model.
+# This tells the agent exactly which field to filter and what value to search for.
 class QuerySchema(BaseModel):
     target_column: str = Field(description="Column to filter, such as AESEV, AETERM, or AESOC")
     filter_value: str = Field(description="Value to search for in the target column")
 
 
-# Standardize column names so the code can safely compare columns
-# regardless of original capitalization or extra spaces.
+# Standardize column names so comparisons are robust to casing and spacing.
 def normalize_colname(value: str) -> str:
     return str(value).strip().upper()
 
 
-# Standardize filter values for matching.
-# This makes the matching case-insensitive and consistent.
+# Standardize text values for matching.
 def normalize_value(value: str) -> str:
     return str(value).strip().upper()
 
 
-# Create the output folder if it does not already exist.
+# Make sure the output folder exists before saving any files.
 def ensure_output_dir() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# Try to load the AE dataset from online pharmaverse sources.
-# If all web sources fail, fall back to a small demo dataset so the
-# rest of the script can still run and demonstrate the logic.
+# Load the AE dataset from the CDISC pilot project first.
+# If that fails, try the other online sources.
+# If all online sources fail, fall back to demo data so the script still runs.
 def load_adae_from_online_source() -> pd.DataFrame:
     last_error = None
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -86,14 +86,24 @@ def load_adae_from_online_source() -> pd.DataFrame:
         try:
             response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
-            df = pd.read_csv(StringIO(response.text))
+
+            # Read the file depending on the extension.
+            # The CDISC pilot file is ae.xpt, so pandas.read_sas is used there.
+            if url.lower().endswith(".xpt"):
+                df = pd.read_sas(StringIO(response.text), format="xport")
+            else:
+                df = pd.read_csv(StringIO(response.text))
+
+            # Decode byte columns returned by read_sas, if needed.
+            if isinstance(df.columns[0], bytes):
+                df.columns = [c.decode("utf-8", errors="ignore") for c in df.columns]
+
             df.columns = [normalize_colname(c) for c in df.columns]
             return df
         except Exception as err:
             last_error = err
 
-    # Fallback data is used only if the online download fails.
-    # This keeps the script runnable in restricted environments.
+    # Fallback demo data if no online source can be accessed.
     fallback_data = {
         "USUBJID": ["01-001", "01-002", "01-003", "01-004", "01-005", "01-006"],
         "AETERM": ["Headache", "Nausea", "Rash", "Pain", "Fatigue", "Headache"],
@@ -106,27 +116,26 @@ def load_adae_from_online_source() -> pd.DataFrame:
     return df
 
 
-# Main agent class that handles three steps:
-# 1) prepare the dataset,
-# 2) parse the user's natural-language question,
-# 3) execute the actual dataframe filter.
+# Main agent class that handles parsing and filtering.
+# The workflow is:
+# 1. prepare the dataframe,
+# 2. interpret the user's question,
+# 3. filter the data,
+# 4. return subject counts and IDs.
 class ClinicalTrialDataAgent:
     def __init__(self, df: pd.DataFrame, api_key: Optional[str] = None):
-        # Keep a private copy so the original dataframe is not modified.
+        # Keep a clean copy of the dataframe so the original is not modified.
         self.df = df.copy()
         self.df.columns = [normalize_colname(c) for c in self.df.columns]
 
-        # Build a lookup from normalized column names to actual dataframe columns.
-        # This is useful if the dataframe was loaded with unusual formatting.
+        # Map normalized column names back to the actual dataframe columns.
         self.col_map = {c.upper(): c for c in self.df.columns}
 
-        # Read the API key from the argument or environment variable.
-        # If no key is available, the code will use the mock parser.
+        # API key can come from the constructor or environment variable.
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.structured_llm = None
 
-        # If LangChain OpenAI is available and an API key exists,
-        # create a structured-output LLM that returns QuerySchema objects.
+        # If LangChain OpenAI is installed and a key exists, use structured LLM output.
         if ChatOpenAI is not None and self.api_key:
             llm = ChatOpenAI(
                 model="gpt-4o-mini",
@@ -135,12 +144,12 @@ class ClinicalTrialDataAgent:
             )
             self.structured_llm = llm.with_structured_output(QuerySchema)
 
-    # Fallback parser used when no LLM is available.
-    # This function maps common words to one of the known AE columns.
+    # Rule-based fallback parser used when no LLM is available.
+    # It maps common words in the question to the most likely AE column.
     def mock_parse(self, question: str) -> Dict[str, str]:
         q = question.lower()
 
-        # Severity-related wording maps to AESEV.
+        # Severity-related words should map to AESEV.
         if any(word in q for word in ["severity", "intensity", "mild", "moderate", "severe"]):
             if "mild" in q:
                 return {"target_column": "AESEV", "filter_value": "MILD"}
@@ -150,7 +159,7 @@ class ClinicalTrialDataAgent:
                 return {"target_column": "AESEV", "filter_value": "SEVERE"}
             return {"target_column": "AESEV", "filter_value": "MODERATE"}
 
-        # SOC/body-system wording maps to AESOC.
+        # Body-system words should map to AESOC.
         if any(word in q for word in ["cardiac", "skin", "gastrointestinal", "respiratory", "nervous"]):
             if "cardiac" in q:
                 return {"target_column": "AESOC", "filter_value": "CARDIAC"}
@@ -163,17 +172,17 @@ class ClinicalTrialDataAgent:
             if "nervous" in q:
                 return {"target_column": "AESOC", "filter_value": "NERVOUS"}
 
-        # Specific adverse event terms map to AETERM.
+        # Known AE terms are mapped to AETERM.
         common_terms = ["headache", "nausea", "pain", "rash", "dizziness", "fatigue", "vomiting"]
         for term in common_terms:
             if term in q:
                 return {"target_column": "AETERM", "filter_value": term.upper()}
 
-        # Default fallback: treat the whole question as an AE term search.
+        # Default behavior: search the whole question text in AETERM.
         return {"target_column": "AETERM", "filter_value": question.strip().upper()}
 
-    # Parse the user's question into structured instructions.
-    # If an LLM is available, use it; otherwise use the rule-based parser.
+    # Convert the user's question into structured search instructions.
+    # If an LLM is available, it is used; otherwise the rule-based parser runs.
     def parse_question(self, question: str) -> Dict[str, str]:
         if self.structured_llm is not None:
             parsed = self.structured_llm.invoke(SCHEMA_TEXT + "\nUser question: " + question)
@@ -183,42 +192,39 @@ class ClinicalTrialDataAgent:
             }
         return self.mock_parse(question)
 
-    # Use the parsed instructions to filter the dataframe.
-    # The function returns:
-    # - the count of unique subjects,
-    # - the list of matching USUBJIDs,
-    # - the full matched rows.
+    # Apply the parsed search instruction to the dataframe.
+    # Returns the number of unique subjects, the matching subject IDs, and matched rows.
     def execute_filter(self, parsed: Dict[str, str]) -> Tuple[int, List[str], pd.DataFrame]:
         target_column = normalize_colname(parsed["target_column"])
         filter_value = normalize_value(parsed["filter_value"])
 
-        # Ensure the requested column actually exists in the dataset.
+        # Confirm the requested column exists before filtering.
         if target_column not in self.col_map:
             raise ValueError(f"Target column '{target_column}' not found in dataframe.")
 
-        # The subject identifier is required so the code can return unique subjects.
+        # USUBJID is required to return distinct subject identifiers.
         if "USUBJID" not in self.df.columns:
             raise ValueError("USUBJID column is required in the dataset.")
 
-        # Convert the actual column to uppercase text for consistent matching.
+        # Convert the target column to uppercase text so matching is consistent.
         actual_col = self.col_map[target_column]
         series = self.df[actual_col].astype(str).str.upper().str.strip()
 
-        # Search for the parsed filter value anywhere in the target column.
-        # re.escape ensures special characters in the query do not break matching.
+        # Perform a case-insensitive substring search.
+        # re.escape protects against special characters in the query.
         mask = series.str.contains(re.escape(filter_value), na=False)
 
-        # Collect all rows that match the condition.
+        # Subset the dataframe to only matching rows.
         matched_df = self.df.loc[mask].copy()
 
-        # Extract unique subject IDs from the matched rows.
+        # Extract unique subject IDs from the filtered rows.
         matched_ids = matched_df["USUBJID"].dropna().astype(str).unique().tolist()
         unique_count = len(matched_ids)
 
         return unique_count, matched_ids, matched_df
 
-    # End-to-end helper that runs parsing and filtering together.
-    # This is the main entry point used by the test queries.
+    # End-to-end method: parse the question and then execute the filter.
+    # This is the main method used by the example test queries.
     def ask(self, question: str) -> Dict[str, object]:
         parsed = self.parse_question(question)
         count, ids, matched_df = self.execute_filter(parsed)
@@ -232,8 +238,8 @@ class ClinicalTrialDataAgent:
         }
 
 
-# Print a readable summary for each query result.
-# This keeps the console output compact while still showing the key outputs.
+# Print a compact summary of one query result.
+# This helps the user quickly see what was parsed and which subjects matched.
 def pretty_print_result(idx: int, result: Dict[str, object]) -> None:
     print("\n" + "=" * 74)
     print(f"Query {idx}: {result['question']}")
@@ -244,8 +250,8 @@ def pretty_print_result(idx: int, result: Dict[str, object]) -> None:
     print("=" * 74)
 
 
-# Save each query's matched rows and summary text to files.
-# This gives a reproducible artifact for review or submission.
+# Save the filtered rows and a text summary for each query.
+# This creates submission-friendly artifacts in the output folder.
 def save_result_files(idx: int, result: Dict[str, object]) -> None:
     ensure_output_dir()
 
@@ -266,15 +272,16 @@ def save_result_files(idx: int, result: Dict[str, object]) -> None:
         f.write("\n".join(lines))
 
 
-# Script entry point.
-# When the file is run directly, it loads the dataset, creates the agent,
-# runs three sample queries, prints the results, and saves the output files.
+# Main script execution.
+# This section only runs when the file is executed directly.
+# It loads the AE dataset, creates the agent, runs three test queries,
+# prints the results, and saves the output files.
 if __name__ == "__main__":
     df = load_adae_from_online_source()
     agent = ClinicalTrialDataAgent(df)
 
-    # Three example questions are used to demonstrate the parsing flow
-    # and the dataframe filtering behavior.
+    # Example queries demonstrate how natural language gets mapped
+    # to a target column and filter value.
     test_queries = [
         "Give me the subjects who had Adverse events of Moderate severity.",
         "Show subjects with Headache.",
