@@ -181,3 +181,51 @@ exAlive <- exClean %>%
   filter(validEX) %>%
   group_by(STUDYID, USUBJID) %>%
   summarise(EXLASTDT = max(EXDT, na.rm = TRUE), .groups = "drop")
+
+# -------------------------------------------------------------------
+# 11) Join all last-alive date sources
+# -------------------------------------------------------------------
+adslAlive1 <- adslItt %>%
+  left_join(vsAlive, by = c("STUDYID", "USUBJID"))
+
+adslAlive2 <- adslAlive1 %>%
+  left_join(aeAlive, by = c("STUDYID", "USUBJID"))
+
+adslAlive3 <- adslAlive2 %>%
+  left_join(dsAlive, by = c("STUDYID", "USUBJID"))
+
+adslAlive4 <- adslAlive3 %>%
+  left_join(exAlive, by = c("STUDYID", "USUBJID"))
+
+# -------------------------------------------------------------------
+# 12) Derive LSTAVLDT
+# -------------------------------------------------------------------
+adslLstAlv <- adslAlive4 %>%
+  mutate(
+    LSTAVLDT = pmax(VSLASTDT, AELASTDT, DSLASTDT, EXLASTDT, na.rm = TRUE),
+    LSTAVLDT = if_else(is.infinite(LSTAVLDT), as.Date(NA), LSTAVLDT)
+  )
+
+# -------------------------------------------------------------------
+# 13) Derive treatment assignment variables
+# -------------------------------------------------------------------
+adslTrtAssign <- adslLstAlv %>%
+  mutate(
+    TRT01P = ARM,
+    TRT01A = ACTARM,
+    TRT01PN = NA_integer_,
+    TRT01AN = NA_integer_
+  )
+
+# -------------------------------------------------------------------
+# 14) Final ADSL output
+# -------------------------------------------------------------------
+adslOut <- adslTrtAssign %>%
+  select(
+    STUDYID, USUBJID, SUBJID,
+    SEX, RACE, COUNTRY, AGE,
+    AGEGR9, AGEGR9N,
+    ARM, ACTARM, TRT01P, TRT01A, TRT01PN, TRT01AN,
+    TRTSDTM, TRTSTMF, TRTSDT, TRTEDTM, TRTEDT, TRTDURD,
+    ITTFL, LSTAVLDT
+  )
