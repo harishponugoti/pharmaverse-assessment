@@ -276,3 +276,4 @@ error-free":
 - `question_3_tlg/outputs/ae_table10_log.txt`
 - `question_3_tlg/outputs/02_create_visualizations_log.txt`
 - `question_4_genai/output/query_1_summary.txt`, `query_2_summary.txt`, `query_3_summary.txt`
+
