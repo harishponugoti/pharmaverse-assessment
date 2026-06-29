@@ -145,17 +145,12 @@ ae_tbl <- tbl_hierarchical(
 cat("   tbl_hierarchical() object built.\n\n")
 
 # ------------------------------------------------------------------------- #
-# STEP 6: (Total column intentionally NOT added per latest requirement --
-#   table shows only the by-arm (ACTARM) columns, no overall/Total column.)
-# ------------------------------------------------------------------------- #
-
-# ------------------------------------------------------------------------- #
-# STEP 7: Sort by descending frequency, as required by the task.
+# STEP 6: Sort by descending frequency, as required by the task.
 #   sort_hierarchical() sorts BOTH levels of the hierarchy (AESOC, then
 #   AETERM within each AESOC) by descending overall frequency by default.
 # ------------------------------------------------------------------------- #
 
-cat(">> STEP 7: Sorting rows by descending frequency (sort_hierarchical())...\n")
+cat(">> STEP 6: Sorting rows by descending frequency (sort_hierarchical())...\n")
 
 ae_tbl <- ae_tbl %>%
   sort_hierarchical(sort = everything() ~ "descending")
@@ -163,7 +158,7 @@ ae_tbl <- ae_tbl %>%
 cat("   Table sorted: most frequent SOC/AE terms appear first.\n\n")
 
 # ------------------------------------------------------------------------- #
-# STEP 8: Cosmetic / regulatory-style formatting (bold labels, caption,
+# STEP 7: Cosmetic / regulatory-style formatting (bold labels, caption,
 #   header styling) to match the FDA Table 10 look in the screenshot.
 #
 #   INDENTATION: tbl_hierarchical() already indents AETERM (PT) rows one
@@ -173,7 +168,7 @@ cat("   Table sorted: most frequent SOC/AE terms appear first.\n\n")
 #   indent, in case a theme or prior modify_*() call has changed it.
 # ------------------------------------------------------------------------- #
 
-cat(">> STEP 8: Applying final formatting (labels, caption, bold, indent)...\n")
+cat(">> STEP 7: Applying final formatting (labels, caption, bold, indent)...\n")
 
 ae_tbl <- ae_tbl %>%
   modify_table_styling(
@@ -186,3 +181,194 @@ ae_tbl <- ae_tbl %>%
   modify_footnote(everything() ~ NA)   # remove default gtsummary footnotes
 
 cat("   Formatting applied (PT rows indented one level beneath their SOC).\n\n")
+
+
+# ------------------------------------------------------------------------- #
+# STEP 8: Save the FINAL ANALYSIS DATASET that underlies the table.
+#   as_tibble() on a tbl_hierarchical object returns the printed table as
+#   a flat data frame (one row per AESOC/AETERM, one column per ACTARM)
+#   -- this is the deliverable "final dataset" requirement.
+#
+#   Two adjustments applied here so they flow through to EVERY output
+#   (CSV, HTML, DOCX) consistently:
+#     1. Column headers: strip the "**...**" markdown-bold markers that
+#        gtsummary's col_labels add by default (we don't render markdown,
+#        so they'd otherwise show up as literal asterisks).
+#     2. Indentation: bake 3 literal leading spaces onto the AETERM (PT)
+#        row label, directly in the text, so the PT term visibly starts
+#        a few spaces in from the AESOC heading above it -- in the CSV,
+#        the HTML table, and the DOCX table alike (not just a CSS effect).
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 8: Exporting final analysis dataset (CSV)...\n")
+
+ae_tbl_df <- as_tibble(ae_tbl, col_labels = TRUE)
+
+# --- 1. Strip "**bold**" markdown markers from column headers -------------
+names(ae_tbl_df) <- gsub("\\*\\*", "", names(ae_tbl_df))
+
+# --- 2. Identify SOC/overall header rows vs AETERM (PT) rows --------------
+label_col   <- names(ae_tbl_df)[1]                       # first column = row label
+stat_cols   <- names(ae_tbl_df)[-1]                       # remaining = treatment arm columns
+soc_values  <- unique(adae_teae$AESOC)                    # known SOC header text
+overall_lbl <- "Treatment Emergent AEs"                   # known overall-row text
+
+is_header_row <- ae_tbl_df[[label_col]] %in% c(soc_values, overall_lbl)
+is_pt_row     <- !is_header_row                            # AETERM rows -> indented
+
+cat("   Header (SOC/overall) rows:", sum(is_header_row), " | Indented (PT) rows:", sum(is_pt_row), "\n")
+
+# --- 3. Bake the indentation directly into the label text -----------------
+#     AESOC sits at column position 1 (no leading spaces); the AETERM/PT
+#     rows beneath it get 3 leading spaces, e.g.:
+#       CARDIAC DISORDERS
+#          ATRIAL FIBRILLATION
+#          ATRIAL FLUTTER
+indent_spaces <- "   "   # 3 spaces
+ae_tbl_df[[label_col]][is_pt_row] <- paste0(indent_spaces, ae_tbl_df[[label_col]][is_pt_row])
+
+write.csv(ae_tbl_df, "outputs/ae_table10_analysis_data.csv", row.names = FALSE)
+
+cat("   Saved:", normalizePath("outputs/ae_table10_analysis_data.csv"), "\n\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 9: Export the final, regulatory-ready table to HTML and DOCX.
+#
+#   IMPORTANT: this step DELIBERATELY avoids gt::gtsave()/gt::as_raw_html()
+#   and {flextable}, because both depend on {xfun}/{rmarkdown} internals
+#   that are broken in some R installs ("object 'attr' is not exported by
+#   namespace:xfun") and flextable itself can require Rtools to compile on
+#   Windows. Instead we build the HTML table directly with base R (zero
+#   extra dependencies) and reuse that HTML for the DOCX file, which Word
+#   opens natively -- so this step cannot fail due to package/Rtools
+#   issues on your machine.
+#
+#   The label column already carries its own indentation as literal
+#   spaces (Step 9). `white-space: pre` on that cell ensures the browser/
+#   Word renderer displays those spaces instead of collapsing them, and
+#   wider min-widths are applied to all columns per the latest request.
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 9: Exporting final table outputs (HTML, DOCX)...\n")
+
+# --- Build the HTML table manually (base R only, no dependencies) -------- #
+html_escape <- function(x) {
+  x <- gsub("&", "&amp;", x, fixed = TRUE)
+  x <- gsub("<", "&lt;",  x, fixed = TRUE)
+  x <- gsub(">", "&gt;",  x, fixed = TRUE)
+  x
+}
+
+header_cells <- paste0(
+  "<th style='border-bottom:2px solid #000; padding:8px 14px; text-align:center; min-width:160px;'>",
+  html_escape(c(label_col, stat_cols)), "</th>", collapse = ""
+)
+# Widen the label column specifically (first header cell) since it holds
+# the longest AESOC/AETERM text.
+header_cells <- sub(
+  "min-width:160px;'>",
+  "min-width:340px; text-align:left;'>",
+  header_cells, fixed = FALSE
+)
+
+body_rows <- vapply(seq_len(nrow(ae_tbl_df)), function(i) {
+  lbl <- html_escape(as.character(ae_tbl_df[[label_col]][i]))
+  if (is_pt_row[i]) {
+    # PT row: literal leading spaces preserved via white-space:pre
+    label_html <- sprintf(
+      "<td style='padding:4px 14px; min-width:340px; white-space:pre;'>%s</td>", lbl
+    )
+  } else {
+    # SOC / overall row: bold, no indent
+    label_html <- sprintf(
+      "<td style='padding:6px 14px; min-width:340px; font-weight:bold; white-space:pre;'>%s</td>", lbl
+    )
+  }
+  stat_html <- vapply(stat_cols, function(cn) {
+    val <- ae_tbl_df[[cn]][i]
+    val <- ifelse(is.na(val), "", as.character(val))
+    sprintf("<td style='padding:4px 14px; min-width:160px; text-align:center;'>%s</td>", html_escape(val))
+  }, character(1))
+  paste0("<tr>", label_html, paste(stat_html, collapse = ""), "</tr>")
+}, character(1))
+
+html_table <- paste0(
+  "<html><head><meta charset='utf-8'>",
+  "<style>table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:11pt;width:100%;}",
+  "th,td{border:none;} tr:nth-child(even){background-color:#f7f7f7;}</style></head><body>",
+  "<h3>Table 10. Treatment-Emergent Adverse Events by System Organ Class and Preferred Term</h3>",
+  "<table><thead><tr>", header_cells, "</tr></thead><tbody>",
+  paste(body_rows, collapse = ""),
+  "</tbody></table></body></html>"
+)
+
+# --- HTML output ----------------------------------------------------------
+html_ok <- tryCatch({
+  writeLines(html_table, "outputs/ae_table10.html")
+  TRUE
+}, error = function(e) {
+  cat("   ERROR writing HTML:", conditionMessage(e), "\n")
+  FALSE
+})
+if (html_ok) cat("   Saved HTML:", normalizePath("outputs/ae_table10.html"), "\n")
+
+# --- DOCX output ------------------------------------------------------------
+# Primary attempt: {officer} alone (lighter than flextable, no Rtools needed
+# if a CRAN binary is available) using a plain body_add_table (no styling
+# package required). Falls back to saving the HTML file with a .doc
+# extension, which Microsoft Word opens natively as a formatted document
+# -- this guarantees a working DOCX-equivalent even if officer is
+# unavailable in your R installation.
+docx_ok <- tryCatch({
+  if (!requireNamespace("officer", quietly = TRUE)) {
+    install.packages("officer", type = "binary")
+  }
+  library(officer)
+  doc <- officer::read_docx() %>%
+    officer::body_add_par("Table 10. Treatment-Emergent Adverse Events by System Organ Class and Preferred Term",
+                          style = "heading 1") %>%
+    officer::body_add_table(value = as.data.frame(ae_tbl_df), style = "table_template")
+  print(doc, target = "outputs/ae_table10.docx")
+  TRUE
+}, error = function(e) {
+  cat("   NOTE: officer table export failed (", conditionMessage(e), ").\n", sep = "")
+  cat("   Falling back to HTML-based .doc (opens natively in Microsoft Word)...\n")
+  tryCatch({
+    writeLines(html_table, "outputs/ae_table10.doc")
+    TRUE
+  }, error = function(e2) {
+    cat("   ERROR: .doc fallback also failed:", conditionMessage(e2), "\n")
+    FALSE
+  })
+})
+
+if (docx_ok) {
+  out_docx <- if (file.exists("outputs/ae_table10.docx")) "outputs/ae_table10.docx" else "outputs/ae_table10.doc"
+  cat("   Saved Word file:", normalizePath(out_docx), "\n")
+}
+cat("\n")
+
+
+# ------------------------------------------------------------------------- #
+# STEP 10: Console preview + sanity checks.
+# ------------------------------------------------------------------------- #
+
+cat(">> STEP 10: Sanity checks...\n")
+cat("   Treatment arms in table  :", paste(unique(adsl_safety$ACTARM), collapse = ", "), "\n")
+cat("   Rows in final dataset    :", nrow(ae_tbl_df), "\n")
+cat("   Columns in final dataset :", paste(names(ae_tbl_df), collapse = " | "), "\n\n")
+cat("   Preview (first 10 rows):\n")
+print(utils::head(ae_tbl_df, 10))
+
+cat("\n================================================================\n")
+cat("Run completed :", as.character(Sys.time()), "\n")
+cat("STATUS: SUCCESS\n")
+cat("================================================================\n")
+
+# ------------------------------------------------------------------------- #
+# STEP 11: Close log sinks (always last).
+# ------------------------------------------------------------------------- #
+
+sink(type = "message")
+sink()
+close(log_con)
