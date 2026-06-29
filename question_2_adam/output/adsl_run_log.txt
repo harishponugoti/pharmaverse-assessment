@@ -1,0 +1,9 @@
+Question 2 ADSL dataset creation completed successfully.
+Rows: 306
+Columns: 48
+Missing AGEGR1: 0
+Missing AGEGR9: 0
+Missing RANDDT: 52
+Missing TRTSDTM: 52
+Missing ITTFL: 0
+Missing LSTAVLDT: 0

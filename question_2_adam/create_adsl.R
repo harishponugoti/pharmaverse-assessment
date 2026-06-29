@@ -1,146 +1,124 @@
+# -------------------------------------------------------------------
 # Question 2 - ADSL creation
-# Purpose: Create subject-level ADaM dataset using pharmaverse SDTM inputs
-# Required derivations:
-# - AGEGR9, AGEGR9N
-# - TRTSDTM, TRTSTMF
-# - ITTFL
-# - LSTAVLDT
-# Notes:
-# - Uses DM as the base dataset
-# - Uses admiral derivation functions where possible
-# - Adds clear comments for assessment review
+# Purpose: Create a reviewer-ready ADSL dataset with traceable object names
+# -------------------------------------------------------------------
 
-# -------------------------------------------------------------------
-# 1) Install packages if needed
-# -------------------------------------------------------------------
-required_packages <- c(
-  "admiral",
-  "dplyr",
-  "stringr",
-  "lubridate",
-  "pharmaversesdtm"
-)
+# Packages -----------------------------------------------------------
+requiredPackages <- c("admiral", "dplyr", "stringr", "readr", "lubridate", "pharmaversesdtm")
+newPackages <- requiredPackages[!requiredPackages %in% installed.packages()[, "Package"]]
+if (length(newPackages) > 0) install.packages(newPackages)
 
-new_packages <- required_packages[!required_packages %in% installed.packages()[, "Package"]]
-if (length(new_packages) > 0) {
-  install.packages(new_packages)
-}
-
-# -------------------------------------------------------------------
-# 2) Load libraries
-# -------------------------------------------------------------------
 library(admiral)
 library(dplyr)
 library(stringr)
+library(readr)
 library(lubridate)
 library(pharmaversesdtm)
 
-# -------------------------------------------------------------------
-# 3) Load SDTM source datasets
-# -------------------------------------------------------------------
-dmRaw <- pharmaversesdtm::dm
-exRaw <- pharmaversesdtm::ex
-dsRaw <- pharmaversesdtm::ds
-aeRaw <- pharmaversesdtm::ae
-vsRaw <- pharmaversesdtm::vs
+# Read in data -------------------------------------------------------
+adsl_q2_raw_dm <- pharmaversesdtm::dm %>% mutate(across(where(is.character), ~ na_if(.x, "")))
+adsl_q2_raw_ex <- pharmaversesdtm::ex %>% mutate(across(where(is.character), ~ na_if(.x, "")))
+adsl_q2_raw_ds <- pharmaversesdtm::ds %>% mutate(across(where(is.character), ~ na_if(.x, "")))
+adsl_q2_raw_ae <- pharmaversesdtm::ae %>% mutate(across(where(is.character), ~ na_if(.x, "")))
+adsl_q2_raw_vs <- pharmaversesdtm::vs %>% mutate(across(where(is.character), ~ na_if(.x, "")))
 
-# Replace blank strings with NA in character columns
-dmClean <- dmRaw %>%
-  mutate(across(where(is.character), ~ na_if(.x, "")))
+# Base ADSL ----------------------------------------------------------
+adsl_q2_base <- adsl_q2_raw_dm %>% select(-DOMAIN)
 
-exClean <- exRaw %>%
-  mutate(across(where(is.character), ~ na_if(.x, "")))
-
-dsClean <- dsRaw %>%
-  mutate(across(where(is.character), ~ na_if(.x, "")))
-
-aeClean <- aeRaw %>%
-  mutate(across(where(is.character), ~ na_if(.x, "")))
-
-vsClean <- vsRaw %>%
-  mutate(across(where(is.character), ~ na_if(.x, "")))
-
-# -------------------------------------------------------------------
-# 4) Base ADSL from DM
-# -------------------------------------------------------------------
-adslBase <- dmClean %>%
-  select(-DOMAIN)
-
-# -------------------------------------------------------------------
-# 5) Derive age groups
-# -------------------------------------------------------------------
-adslAge <- adslBase %>%
+# Derive age, region, and population flags --------------------------
+adsl_q2_grp <- adsl_q2_base %>%
   mutate(
+    AGEGR1 = case_when(
+      is.na(AGE) ~ NA_character_,
+      AGE < 18 ~ "<18",
+      between(AGE, 18, 64) ~ "18-64",
+      AGE > 64 ~ ">64"
+    ),
     AGEGR9 = case_when(
       is.na(AGE) ~ NA_character_,
       AGE < 18 ~ "<18",
-      AGE >= 18 & AGE < 50 ~ "18-50",
-      AGE >= 50 ~ "50+"
+      between(AGE, 18, 50) ~ "18 - 50",
+      AGE > 50 ~ ">50"
     ),
     AGEGR9N = case_when(
       is.na(AGE) ~ NA_integer_,
       AGE < 18 ~ 1L,
-      AGE >= 18 & AGE < 50 ~ 2L,
-      AGE >= 50 ~ 3L
+      between(AGE, 18, 50) ~ 2L,
+      AGE > 50 ~ 3L
+    ),
+    REGION1 = case_when(
+      COUNTRY %in% c("USA", "CAN") ~ "NA",
+      !is.na(COUNTRY) ~ "RoW",
+      TRUE ~ NA_character_
     )
   )
 
-# -------------------------------------------------------------------
-# 6) Prepare exposure datetimes
-# -------------------------------------------------------------------
-exDatetime <- exClean %>%
+# Prepare exposure data ---------------------------------------------
+adsl_q2_ex_ext <- adsl_q2_raw_ex %>%
+  mutate(validDose = EXDOSE > 0 | (EXDOSE == 0 & str_detect(EXTRT, "PLACEBO"))) %>%
   derive_vars_dtm(
     dtc = EXSTDTC,
-    new_vars_prefix = "EXST"
+    new_vars_prefix = "EXST",
+    date_imputation = "first",
+    time_imputation = "00:00:00",
+    ignore_seconds_flag = TRUE
   ) %>%
   derive_vars_dtm(
     dtc = EXENDTC,
     new_vars_prefix = "EXEN",
-    time_imputation = "last"
+    date_imputation = "last",
+    time_imputation = "23:59:59"
   )
 
-# -------------------------------------------------------------------
-# 7) Derive treatment start and end datetimes
-# -------------------------------------------------------------------
-adslTrtStart <- adslAge %>%
+# Derive treatment variables ----------------------------------------
+adsl_q2_trt <- adsl_q2_grp %>%
   derive_vars_merged(
-    dataset_add = exDatetime,
+    dataset_add = adsl_q2_ex_ext,
     by_vars = exprs(STUDYID, USUBJID),
+    filter_add = validDose & !is.na(EXSTDTM),
+    new_vars = exprs(TRTSDTM = EXSTDTM, TRTSTMF = EXSTTMF, TRT01A = EXTRT),
     order = exprs(EXSTDTM, EXSEQ),
-    new_vars = exprs(TRTSDTM = EXSTDTM, TRTSTMF = EXSTTMF),
-    filter_add = (EXDOSE > 0 | (EXDOSE == 0 & str_detect(EXTRT, "PLACEBO"))) & !is.na(EXSTDTM),
     mode = "first"
-  )
-
-adslTrtEnd <- adslTrtStart %>%
+  ) %>%
   derive_vars_merged(
-    dataset_add = exDatetime,
+    dataset_add = adsl_q2_ex_ext,
     by_vars = exprs(STUDYID, USUBJID),
-    order = exprs(EXENDTM, EXSEQ),
+    filter_add = validDose & !is.na(EXENDTM),
     new_vars = exprs(TRTEDTM = EXENDTM, TRTETMF = EXENTMF),
-    filter_add = (EXDOSE > 0 | (EXDOSE == 0 & str_detect(EXTRT, "PLACEBO"))) & !is.na(EXENDTM),
+    order = exprs(EXENDTM, EXSEQ),
     mode = "last"
-  )
-
-# -------------------------------------------------------------------
-# 8) Convert datetime to date and derive treatment duration
-# -------------------------------------------------------------------
-adslTrtDate <- adslTrtEnd %>%
-  derive_vars_dtm_to_dt(source_vars = exprs(TRTSDTM, TRTEDTM)) %>%
-  derive_var_trtdurd()
-
-# -------------------------------------------------------------------
-# 9) Derive ITT flag
-# -------------------------------------------------------------------
-adslItt <- adslTrtDate %>%
+  ) %>%
   mutate(
-    ITTFL = if_else(!is.na(ARM), "Y", "N")
+    TRT01P = ARM,
+    ITTFL = if_else(!is.na(ARM) & ARM != "", "Y", "N"),
+    SAFFL = if_else(!is.na(TRTSDTM), "Y", "N")
+  ) %>%
+  derive_vars_dtm_to_dt(source_vars = exprs(TRTSDTM, TRTEDTM))
+
+# Derive duration ----------------------------------------------------
+adsl_q2_trt <- adsl_q2_trt %>% derive_var_trtdurd()
+
+# Disposition, randomization, and periods ----------------------------
+adsl_q2_ds_last <- adsl_q2_raw_ds %>%
+  transmute(
+    STUDYID = as.character(STUDYID),
+    USUBJID = as.character(USUBJID),
+    DSDT = suppressWarnings(as.Date(substr(DSSTDTC, 1, 10)))
+  ) %>%
+  filter(!is.na(DSDT)) %>%
+  group_by(STUDYID, USUBJID) %>%
+  summarise(EOSDT = max(DSDT, na.rm = TRUE), .groups = "drop")
+
+adsl_q2_final <- adsl_q2_trt %>%
+  left_join(adsl_q2_ds_last, by = c("STUDYID", "USUBJID")) %>%
+  mutate(
+    RANDDT = TRTSDT,
+    AP01SDT = as.Date(RFSTDTC),
+    AP01EDT = as.Date(RFENDTC)
   )
 
-# -------------------------------------------------------------------
-# 10) Derive last known alive date components
-# -------------------------------------------------------------------
-vsAlive <- vsRaw %>%
+# Last known alive date ---------------------------------------------
+adsl_q2_vs_last <- adsl_q2_raw_vs %>%
   transmute(
     STUDYID = as.character(STUDYID),
     USUBJID = as.character(USUBJID),
@@ -151,7 +129,7 @@ vsAlive <- vsRaw %>%
   group_by(STUDYID, USUBJID) %>%
   summarise(VSLASTDT = max(VSDT, na.rm = TRUE), .groups = "drop")
 
-aeAlive <- aeClean %>%
+adsl_q2_ae_last <- adsl_q2_raw_ae %>%
   transmute(
     STUDYID = as.character(STUDYID),
     USUBJID = as.character(USUBJID),
@@ -161,71 +139,57 @@ aeAlive <- aeClean %>%
   group_by(STUDYID, USUBJID) %>%
   summarise(AELASTDT = max(AEDT, na.rm = TRUE), .groups = "drop")
 
-dsAlive <- dsClean %>%
-  transmute(
-    STUDYID = as.character(STUDYID),
-    USUBJID = as.character(USUBJID),
-    DSDT = suppressWarnings(as.Date(substr(DSSTDTC, 1, 10)))
-  ) %>%
-  filter(!is.na(DSDT)) %>%
-  group_by(STUDYID, USUBJID) %>%
-  summarise(DSLASTDT = max(DSDT, na.rm = TRUE), .groups = "drop")
-
-exAlive <- exClean %>%
+adsl_q2_ex_last <- adsl_q2_ex_ext %>%
   transmute(
     STUDYID = as.character(STUDYID),
     USUBJID = as.character(USUBJID),
     EXDT = suppressWarnings(as.Date(substr(EXENDTC, 1, 10))),
-    validEX = !is.na(EXDT) & (EXDOSE > 0 | (EXDOSE == 0 & str_detect(EXTRT, "PLACEBO")))
+    validEX = validDose & !is.na(EXENDTM)
   ) %>%
   filter(validEX) %>%
   group_by(STUDYID, USUBJID) %>%
   summarise(EXLASTDT = max(EXDT, na.rm = TRUE), .groups = "drop")
 
-# -------------------------------------------------------------------
-# 11) Join all last-alive date sources
-# -------------------------------------------------------------------
-adslAlive1 <- adslItt %>%
-  left_join(vsAlive, by = c("STUDYID", "USUBJID"))
-
-adslAlive2 <- adslAlive1 %>%
-  left_join(aeAlive, by = c("STUDYID", "USUBJID"))
-
-adslAlive3 <- adslAlive2 %>%
-  left_join(dsAlive, by = c("STUDYID", "USUBJID"))
-
-adslAlive4 <- adslAlive3 %>%
-  left_join(exAlive, by = c("STUDYID", "USUBJID"))
-
-# -------------------------------------------------------------------
-# 12) Derive LSTAVLDT
-# -------------------------------------------------------------------
-adslLstAlv <- adslAlive4 %>%
+adsl_q2_alive <- adsl_q2_final %>%
+  left_join(adsl_q2_vs_last, by = c("STUDYID", "USUBJID")) %>%
+  left_join(adsl_q2_ae_last, by = c("STUDYID", "USUBJID")) %>%
+  left_join(adsl_q2_ex_last, by = c("STUDYID", "USUBJID")) %>%
   mutate(
-    LSTAVLDT = pmax(VSLASTDT, AELASTDT, DSLASTDT, EXLASTDT, na.rm = TRUE),
+    LSTAVLDT = pmax(VSLASTDT, AELASTDT, EOSDT, EXLASTDT, na.rm = TRUE),
     LSTAVLDT = if_else(is.infinite(LSTAVLDT), as.Date(NA), LSTAVLDT)
   )
 
-# -------------------------------------------------------------------
-# 13) Derive treatment assignment variables
-# -------------------------------------------------------------------
-adslTrtAssign <- adslLstAlv %>%
-  mutate(
-    TRT01P = ARM,
-    TRT01A = ACTARM,
-    TRT01PN = NA_integer_,
-    TRT01AN = NA_integer_
-  )
+# Final ADSL output --------------------------------------------------
+adsl_q2_requested_cols <- c(
+  "STUDYID", "USUBJID", "SUBJID", "SITEID", "COUNTRY",
+  "AGE", "AGEU", "BRTHDT", "AAGE", "AAGEU",
+  "SEX", "RACE", "ETHNIC",
+  "ARM", "ACTARM", "TRT01P", "TRT01A",
+  "AGEGR1", "AGEGR9", "AGEGR9N", "REGION1",
+  "RANDDT", "AP01SDT", "AP01EDT",
+  "TRTSDTM", "TRTSTMF", "TRTSDT", "TRTEDTM", "TRTETMF", "TRTEDT", "TRTDURD",
+  "ITTFL", "SAFFL", "EOSDT", "LSTAVLDT"
+)
 
-# -------------------------------------------------------------------
-# 14) Final ADSL output
-# -------------------------------------------------------------------
-adslOut <- adslTrtAssign %>%
-  select(
-    STUDYID, USUBJID, SUBJID,
-    SEX, RACE, COUNTRY, AGE,
-    AGEGR9, AGEGR9N,
-    ARM, ACTARM, TRT01P, TRT01A, TRT01PN, TRT01AN,
-    TRTSDTM, TRTSTMF, TRTSDT, TRTEDTM, TRTEDT, TRTDURD,
-    ITTFL, LSTAVLDT
-  )
+adsl_q2_out <- adsl_q2_alive %>%
+  select(any_of(adsl_q2_requested_cols), everything())
+
+# Save outputs -------------------------------------------------------
+adsl_q2_output_dir <- file.path(getwd(), "output")
+if (!dir.exists(adsl_q2_output_dir)) dir.create(adsl_q2_output_dir, recursive = TRUE, showWarnings = FALSE)
+
+write_csv(adsl_q2_out, file.path(adsl_q2_output_dir, "adsl.csv"))
+
+adsl_q2_log_lines <- c(
+  "Question 2 ADSL dataset creation completed successfully.",
+  paste("Rows:", nrow(adsl_q2_out)),
+  paste("Columns:", ncol(adsl_q2_out)),
+  paste("Missing AGEGR1:", sum(is.na(adsl_q2_out$AGEGR1))),
+  paste("Missing AGEGR9:", sum(is.na(adsl_q2_out$AGEGR9))),
+  paste("Missing RANDDT:", sum(is.na(adsl_q2_out$RANDDT))),
+  paste("Missing TRTSDTM:", sum(is.na(adsl_q2_out$TRTSDTM))),
+  paste("Missing ITTFL:", sum(is.na(adsl_q2_out$ITTFL))),
+  paste("Missing LSTAVLDT:", sum(is.na(adsl_q2_out$LSTAVLDT)))
+)
+
+writeLines(adsl_q2_log_lines, file.path(adsl_q2_output_dir, "adsl_run_log.txt"))
